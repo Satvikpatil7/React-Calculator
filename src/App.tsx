@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { evaluate } from "mathjs";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
@@ -8,80 +9,87 @@ const App: React.FC = () => {
   const [input, setInput] = useState<string>("");
   const inputRef = useRef<HTMLDivElement>(null);
 
+  const isOperator = useCallback((char: string) => /[+\-*/]/.test(char), []);
+
   const safeEvaluate = useCallback((expression: string): string => {
+    // Prevent evaluation if empty or ending with an operator
+    if (!expression || /[+\-*/]$/.test(expression)) {
+      return "Error";
+    }
+
     try {
       console.log("Evaluating expression:", expression);
-      const sanitizedExpression = expression.replace(/x/g, "*").replace(/%/g, "/100*");
-      const result = new Function(`return ${sanitizedExpression}`)().toString();
+      const sanitizedExpression = expression.replace(/%/g, "/100*"); // Convert % to valid math
+      const result = evaluate(sanitizedExpression);
       console.log("Evaluation result:", result);
-      return result;
-    } catch {
-      console.log("Error in evaluation");
+      return result.toString();
+    } catch (err) {
+      console.log("Error in evaluation:", err);
       return "Error";
     }
   }, []);
 
-  const isOperator = useCallback((char: string) => {
-    console.log("Checking if operator:", char);
-    return /[+\-*/]/.test(char);
-  }, []);
+  const handleEvaluate = useCallback(() => {
+    setInput((prev) => safeEvaluate(prev));
+  }, [safeEvaluate]);
 
-  const handleClick = useCallback((value: string) => {
-    console.log("Button clicked:", value);
-    if (value === "C") {
-      setInput("");
-      console.log("Cleared input");
-    } else if (value === "=") {
-      setInput(safeEvaluate(input));
-    } else {
-      setInput((prev) => {
-        if ((isOperator(value) && prev === "") || (isOperator(value) && isOperator(prev.slice(-1)))) {
-          console.log("Preventing consecutive operators");
-          return prev;
-        }
-        console.log("New input:", prev + value);
-        return prev + value;
-      });
-    }
-  }, [input, safeEvaluate, isOperator]);
+  // Handles button clicks using event delegation
+  const handleClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (!target || target.tagName !== "BUTTON") return; // Ignore non-button clicks
 
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    console.log("Key pressed:", event.key);
-    const { key } = event;
-    if (/[0-9.+\-*/%]/.test(key)) {
-      handleClick(key);
-    } else if (key === "Enter") {
-      handleClick("=");
-    } else if (key === "Backspace") {
-      setInput((prev) => {
-        console.log("Backspace pressed, new input:", prev.slice(0, -1));
-        return prev.slice(0, -1);
-      });
-    }
-  }, [handleClick]);
+      const value = target.innerText;
+      console.log("Button clicked:", value);
+
+      if (value === "C") {
+        setInput("");
+      } else if (value === "=") {
+        handleEvaluate();
+      } else {
+        setInput((prev) => {
+          // Prevent consecutive operators
+          if ((isOperator(value) && prev === "") || (isOperator(value) && isOperator(prev.slice(-1)))) {
+            return prev;
+          }
+          return prev + value;
+        });
+      }
+    },
+    [handleEvaluate, isOperator]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      console.log("Key pressed:", event.key);
+      const { key } = event;
+
+      if (/[0-9.+\-*/%]/.test(key)) {
+        setInput((prev) => prev + key);
+      } else if (key === "Enter") {
+        handleEvaluate();
+      } else if (key === "Backspace") {
+        setInput((prev) => prev.slice(0, -1));
+      }
+    },
+    [handleEvaluate]
+  );
 
   useEffect(() => {
-    console.log("Adding event listener for keydown");
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      console.log("Removing event listener for keydown");
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [handleKeyDown]);
 
   useEffect(() => {
-    console.log("Input changed:", input);
     inputRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [input]);
 
-   const buttonValues = useMemo(() => [
-    "C","%","/",
-    "9","8","*",
-    "7","6","-",
-    "5","4","+",
-    "3","2",".",
-    "1","0","=",
-  ], []);
+  const buttonValues = useMemo(
+    () => ["C", "%", "/", "9", "8", "*", "7", "6", "-", "5", "4", "+", "3", "2", ".", "1", "0", "="],
+    []
+  );
 
   return (
     <Box
@@ -128,14 +136,20 @@ const App: React.FC = () => {
         >
           {input || "0"}
         </Box>
-        <Grid container spacing={1} justifyContent="center">
+
+        {/* Attach onClick to parent Grid container for event delegation */}
+        <Grid container spacing={1} justifyContent="center" onClick={handleClick}>
           {buttonValues.map((value) => (
             <Grid item xs={4} key={value}>
               <Button
                 variant="contained"
                 fullWidth
-                onClick={() => handleClick(value)}
-                sx={{ height: "50px", fontSize: "1.2rem", backgroundColor: "#1976d2", color: "white" }}
+                sx={{
+                  height: "50px",
+                  fontSize: "1.2rem",
+                  backgroundColor: "#1976d2",
+                  color: "white",
+                }}
               >
                 {value}
               </Button>
